@@ -1,12 +1,11 @@
 
-// Tokenizer:
-    // let tokenizer = Tokenizer::new(source_code).tokenize()
-    // For token in tokenizer {
-    //    token.view()
-//     }
-// should print out parts of the src labeled with corresponding token type.
-use lazy_static::lazy_static;
+
+
+// use lazy_static::lazy_static; not in use atm
 use regex::Regex;
+
+
+
 
 
 pub struct Token {
@@ -28,6 +27,8 @@ impl std::fmt::Display for Token {
 }
 
 
+
+
 pub enum TokenType {
     Name,
     Op,
@@ -47,6 +48,9 @@ impl TokenType {
     }
 }
 
+
+
+
 pub struct Tokenizer {
     parse_stack: Vec<TokenType>,
     tokens: Vec<Token>,
@@ -64,19 +68,27 @@ impl Tokenizer {
             tokens: Vec::<Token>::new(),
         }
     }
-    pub fn parse_token(&mut self, text: &str, re: Regex) -> Token {
-        Token{
-            tokentype: TokenType::Name,
-            value: re.captures(text).unwrap()
-                                    .get(0)
-                                    .unwrap()
-                                    .as_str()
-                                    .to_string()
+    pub fn parse_token(&mut self, tokentype: TokenType, text: &str) -> Token {
+        match Tokenizer::get_rule(&tokentype).captures(text) {
+            Some(matched) => Token::new(tokentype, matched.get(0).unwrap().as_str().to_string()),
+            None => todo!(),
         }
+
     }
-    pub fn name_rule() -> Regex {
-            Regex::new(r"^(?i)[a-z_](?i)[a-z_0-9]+").unwrap()
-                
+    pub fn get_rule(tokentype: &TokenType) -> Regex {
+            match tokentype { 
+                TokenType::Name => Regex::new(r"^(?i)[a-z_](?i)[a-z_0-9]+")
+                    .expect("invalid regex in Tokenizer::name-rule"),
+                TokenType::Num => Regex::new(r"^[0-9][0-9_.]+")
+                    .expect("invalid regex in Num-rule"),
+                TokenType::Op => todo!(),
+                TokenType::Text => todo!(),
+                TokenType::Newline => todo!(),
+            } // will not fail.
+    }
+
+    pub fn get_parse_stack<'a>(&'a self) -> &'a Vec<TokenType> {
+        &self.parse_stack
     }
 }
 
@@ -87,10 +99,13 @@ mod tests {
     use super::*;
     #[test]
     fn it_works() {
-        let re: Regex = Tokenizer::name_rule();
-        let mut tokenizer = Tokenizer::new();
-        let parsed = tokenizer.parse_token("ok_93 hello world",re);
-        println!("{}", Token{tokentype: TokenType::Name, value: "var1".to_string()});
-        println!("{}",parsed)
+
+        let mut tokenizer = Tokenizer::new();  
+        let token = tokenizer.parse_token(TokenType::Name, "some_name_193 123");
+        println!("{}", token);
+        // printing tokentypes works
+        for tokentype in tokenizer.get_parse_stack() {
+            println!{"{}", tokentype.as_string()}
+        }
     }
 }
