@@ -12,58 +12,96 @@ use regex::Regex;
 
 
 pub struct Tokenizer {
-    parse_stack: Vec<TokenType>,
     tokens: Vec<Token>,
 }
 impl Tokenizer {
     pub fn new() -> Tokenizer {
         Tokenizer {
-            parse_stack: vec![
-                TokenType::Name,
-                TokenType::Op,
-                TokenType::Num,
-                TokenType::Text,
-                TokenType::Newline,
-            ],
             tokens: Vec::<Token>::new(),
         }
     }
-    pub fn tokenize(&mut self, src: &str) -> Option<()> {
-        todo!()
-        /*For tokentype in parse_stack {
-            parse_token
-        } */
-    }
-    pub fn parse_token(&mut self, tokentype: TokenType, text: &str) -> Token {
-        match Tokenizer::get_rule(&tokentype).captures(text) {
-            Some(matched) => Token::new(tokentype, matched.get(0).unwrap().as_str().to_string()),
-            None => todo!(),
+    pub fn tokenize(&mut self, src: &str) -> Result<(), String> {
+        let tokens_initial_length = &self.tokens.len();
+        let mut src_ = src.trim_start_matches(|c| c==' ').to_string();
+        for tokentype in Tokenizer::get_type_stack() {
+            match Tokenizer::parse_token(&tokentype, &src_) {
+                Some(parsed) => {
+                    src_ = parsed.1;
+                    self.push_token(parsed.0);
+                    break;
+                }
+                None => (),
+            };
+        };
+        if tokens_initial_length == &self.tokens.len() {
+            return Err(format!("no match in {}", src_.lines().nth(0).expect("no nth0 line")));
+        } else if self.tokens.last().unwrap().tokentype != TokenType::Eof {
+            return self.tokenize(&src_);
+        } else {
+            Ok(())
         }
-
+    }
+    pub fn push_token(&mut self, token: Token) {
+        self.tokens.push(token);
+    }
+    pub fn parse_token(tokentype: &TokenType, src: &str) -> Option<(Token, String)> {
+        match Tokenizer::get_rule(&tokentype).captures(src) {
+            Some(matched) => {
+                let matched_string = matched.get(0)
+                                            .expect("failed in Tokenizer::parse_token()")
+                                            .as_str();
+                //println!("{}", matched_string); // @debug
+                match tokentype {
+                    &TokenType::Newline|&TokenType::Eof => {
+                        let rest = src.trim().to_string();
+                        Some((Token::new(tokentype, ""), rest))
+                    },
+                    _ => {
+                        let rest = src.strip_prefix(&matched_string)
+                                      .expect(&format!("could not strip: {}", matched_string))
+                                      .trim_start_matches(|c|c==' ')
+                                      .to_string();
+                        Some((Token::new(tokentype, matched_string), rest))
+                    }
+                }                            
+            }
+            None => None,
+        
+        }
     }
     pub fn get_rule(tokentype: &TokenType) -> Regex {
         // defines the rule for parsing the given tokentype.
             match tokentype { 
-                TokenType::Name => Regex::new(r"^(?i)[a-z_](?i)[a-z_0-9]+")
+                TokenType::Name => Regex::new(r"^(?i)[a-z_](?i)[a-z_0-9]+|^(?i)[a-z]")
                     .expect("invalid regex in Tokenizer::name-rule"),
 
                 TokenType::Num => Regex::new(r"^[0-9][0-9_.]+")
                     .expect("invalid regex in Num-rule"),
 
-                TokenType::Op => Regex::new(r"^[+|\-|*|.|,|;|:|!|?|←|→|]")
+                TokenType::Op => Regex::new(r"^[+|\-|*|=|\.|,|;|:|!|?|←|→|]")
                     .expect("invalid regex in Op-rule"),
 
                 TokenType::Text => Regex::new(r"^[\u0022](.*?)[\u0022]") // u0022 -> "
                     .expect("invalid regex in Text-rule"),
 
-                TokenType::Newline => Regex::new(r"^[\n]")
+                TokenType::Newline => Regex::new(r"\u000a")
                     .expect("invalid regex in Newline-rule"),
+                TokenType::Eof => Regex::new(r"\z")
+                    .expect("invalid regex in eof-rule"),
             }
     }
-    pub fn get_parse_stack<'a>(&'a self) -> &'a Vec<TokenType> {
-        &self.parse_stack
+    pub fn get_type_stack() -> Vec<TokenType> {
+        vec![
+            TokenType::Name,
+            TokenType::Op,
+            TokenType::Num,
+            TokenType::Text,
+            TokenType::Newline,
+            TokenType::Eof,
+        ]
     }
 }
+
 
 
 
@@ -72,10 +110,10 @@ pub struct Token {
     value: String
 }
 impl Token {
-    pub fn new(tokentype: TokenType, value: String) -> Token {
+    pub fn new(tokentype: &TokenType, value: &str) -> Token {
         Token {
-            tokentype: tokentype,
-            value: value,
+            tokentype: TokenType::from(tokentype),
+            value: String::from(value),
         } 
     }
 }
@@ -87,13 +125,14 @@ impl std::fmt::Display for Token {
 
 
 
-
+#[derive(PartialEq)]
 pub enum TokenType {
     Name,
     Op,
     Num,
     Text,   //would prefer TokenType::String, but in order to avoid confusion...
     Newline,
+    Eof,
 }
 impl TokenType {
     pub fn as_string(&self) -> String{
@@ -103,13 +142,20 @@ impl TokenType {
             TokenType::Num => "Num".to_string(),
             TokenType::Text => "Text".to_string(),
             TokenType::Newline => "Newline".to_string(),
+            TokenType::Eof => "EOF".to_string(),
+        }
+    }
+    pub fn from(tokentype: &TokenType) -> TokenType {
+        match tokentype {
+            &TokenType::Name => TokenType::Name,
+            &TokenType::Op => TokenType::Op,
+            &TokenType::Num => TokenType::Num,
+            &TokenType::Text => TokenType::Text,
+            &TokenType::Newline => TokenType::Newline,
+            &TokenType::Eof => TokenType::Eof,
         }
     }
 }
-
-
-
-
 
 
 
@@ -119,17 +165,13 @@ mod tests {
     #[test]
     fn it_works() {
 
+        let test_src = r#"print "hello world", 93
+        a+b = c
+        "#;
         let mut tokenizer = Tokenizer::new();
-        let mut src = r#"print hello, a+b"#;  
-        let token = tokenizer.parse_token(TokenType::Name, src);
-        println!("{}", token);
-        src = src.strip_prefix(&token.value).unwrap().trim();
-        println!("{}",src);
-        println!("{}",tokenizer.parse_token(TokenType::Name, src));
-        let op_token = tokenizer.parse_token(TokenType::Op, r"→:+9?()[]");
-        println!("{}", op_token);
-        let text_token = tokenizer.parse_token(TokenType::Text,r#""hello""#);
-        println!("{}", text_token);
-        
+        match tokenizer.tokenize(&test_src) {
+            Ok(()) => for token in tokenizer.tokens {println!("{}", token)}
+            Err(err) => println!("{}",err), 
+        };
     }
 }
